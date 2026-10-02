@@ -1,0 +1,1271 @@
+<?xml version="1.0" encoding="utf-8"?>
+<model version="NetLogo 7.0.4" snapToGrid="true">
+  <code><![CDATA[extensions [ nw ]
+
+globals [
+  num-intra-links
+  
+  interaction-count
+  c-created?
+  first-c-time
+  outcome
+]
+
+turtles-own
+[
+  inventory
+]
+
+breed [speakers-a speaker-a]
+breed [speakers-b speaker-b]
+
+to setup
+  clear-all
+  ask patches [ set pcolor white ]
+  set c-created? false
+  set outcome "running"
+  random-seed graph-seed
+  set-default-shape turtles "person"
+  set num-intra-links (1500 - bridges) / 2
+  create-speakers-a 150 [ set inventory["A"] set color [190 190 0] setxy (random-float min-pxcor) random-ycor ]
+  create-speakers-b 150 [ set inventory["B"] set color [36 94 175]  setxy (random-float max-pxcor) random-ycor ]
+  
+  ; just in case the setup creates a network with an odd output
+  let expected-setup ifelse-value (bridges = 0) [2] [1]
+  let valid-network? false
+  while [not valid-network?] [
+    clear-links
+    connect-speakers-a
+    connect-speakers-b
+    bridge-communities
+    set valid-network? (length nw:weak-component-clusters = expected-setup)
+  ]
+  
+  ; make the network look a little prettier
+  ask links [ set color [220 220 220] ]
+  ask links with [ [breed] of end1 != [breed] of end2 ] [
+    set color black
+    set thickness 0.05
+  ]
+  repeat 10
+  [
+    layout-spring turtles links 0.3 (world-width / (sqrt count turtles)) 1
+  ]
+  random-seed run-seed
+  reset-ticks
+end
+
+to connect-speakers-a
+  while [count links < num-intra-links]
+  [
+    ask one-of turtles with [breed = speakers-a]
+    [
+      let choice one-of other turtles with [breed = speakers-a]
+      if choice != nobody [ create-link-with choice ]
+    ]
+  ]
+end
+
+to connect-speakers-b
+  while [count links < num-intra-links * 2]
+  [
+    ask one-of turtles with [breed = speakers-b]
+    [
+      let choice one-of other turtles with [breed = speakers-b]
+      if choice != nobody [ create-link-with choice ]
+    ]
+  ]
+end
+
+to bridge-communities
+  while [count links < 1500 ]
+  [
+    ask one-of turtles
+    [
+      let choice one-of turtles with [breed != [breed] of myself]
+      if choice != nobody [ create-link-with choice ]
+    ]
+  ]
+end
+
+to create-interaction
+  set interaction-count interaction-count + 1
+  
+  ; randomly choose a turtle and define it as the speaker
+  let role-speaker one-of turtles
+  ; randomly choose a speaker's neighbour to be the hearer
+  let role-hearer one-of [link-neighbors] of role-speaker
+  ; if speaker knows both A and B create C (and drop A and B), with probability gamma
+  if random-float 1 < gamma [
+    ask role-speaker [
+      if member? "A" inventory and member? "B" inventory [ set inventory ["C"]
+        if not c-created? [
+          set c-created? true
+          set first-c-time interaction-count / count turtles
+        ]
+      ]
+    ]
+  ]
+  
+  ; randomly define the chosen word (chosen label) from speaker's inventory
+  let chosen-word one-of [inventory] of role-speaker
+  
+  ifelse member? chosen-word [inventory] of role-hearer
+  [
+    ; the hearer knows the chosen word (chosen label), and the others are dropped with probability beta
+    if random-float 1 < beta [
+      ask role-speaker [ set inventory (list chosen-word) ]
+      ask role-hearer [ set inventory (list chosen-word) ]
+    ]
+  ]
+  [
+    ; if the word is not in hearer's inventory, it adds it
+    ask role-hearer [ set inventory lput chosen-word inventory ]
+  ]
+end
+
+to go
+  if outcome != "running" [ stop ]
+  
+  repeat count turtles [ create-interaction ]
+  ask turtles [
+    let s sort inventory
+    if s = ["A"]         [ set color [190 190 0] ]
+    if s = ["B"]         [ set color [36 94 175] ]
+    if s = ["C"]         [ set color [0 217 215] ]
+    if s = ["A" "B"]     [ set color [78 184 68] ]
+    if s = ["A" "C"]     [ set color [255 93 0] ]
+    if s = ["B" "C"]     [ set color [154 52 194] ]
+    if s = ["A" "B" "C"] [ set color [201 32 132] ]
+  ]
+  tick
+  
+  if all? turtles [inventory = ["A"]] or all? turtles [inventory = ["B"]] or all? turtles [inventory = ["C"]]
+    [ set outcome first [inventory] of one-of turtles 
+  ]
+  
+  if outcome = "running" and ticks >= horizon [
+    set outcome "unresolved"
+  ]
+end]]></code>
+  <widgets>
+    <view x="270" wrappingAllowedX="false" y="7" frameRate="30.0" minPycor="-20" height="660" showTickCounter="true" patchSize="16.0" fontSize="10" wrappingAllowedY="false" width="660" tickCounterLabel="ticks" maxPycor="20" updateMode="1" maxPxcor="20" minPxcor="-20"></view>
+    <slider x="10" step="0.05" y="75" max="1" width="250" display="gamma" height="50" min="0" direction="Horizontal" default="0.5" variable="gamma"></slider>
+    <slider x="10" step="0.05" y="130" max="1" width="250" display="beta" height="50" min="0" direction="Horizontal" default="0.3" variable="beta"></slider>
+    <input x="10" multiline="false" y="185" height="60" variable="horizon" type="number" width="250">100000.0</input>
+    <input x="130" multiline="false" y="250" height="60" variable="run-seed" type="number" width="130">5.0</input>
+    <input x="10" multiline="false" y="250" height="60" variable="graph-seed" type="number" width="115">1.0</input>
+    <button x="10" y="365" height="45" disableUntilTicks="true" forever="true" kind="Observer" width="250">go</button>
+    <chooser x="10" y="10" height="60" variable="bridges" current="5" width="250" display="bridges">
+      <choice type="double" value="0.0"></choice>
+      <choice type="double" value="2.0"></choice>
+      <choice type="double" value="10.0"></choice>
+      <choice type="double" value="50.0"></choice>
+      <choice type="double" value="70.0"></choice>
+      <choice type="double" value="100.0"></choice>
+      <choice type="double" value="150.0"></choice>
+      <choice type="double" value="200.0"></choice>
+      <choice type="double" value="750.0"></choice>
+    </chooser>
+    <plot x="730" autoPlotX="false" yMax="300.0" autoPlotY="false" y="5" xMin="0.0" height="465" legend="true" xMax="7.0" yMin="0.0" width="230" display="Inventory types">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="1" display="A" color="-1184463" legend="true">
+        <setup></setup>
+        <update>plot-pen-reset
+plotxy 0 count turtles with [sort inventory = ["A"]]</update>
+      </pen>
+      <pen interval="1.0" mode="1" display="B" color="-13791810" legend="true">
+        <setup></setup>
+        <update>plot-pen-reset
+plotxy 1 count turtles with [sort inventory = ["B"]]</update>
+      </pen>
+      <pen interval="1.0" mode="1" display="AB" color="-9276814" legend="true">
+        <setup></setup>
+        <update>plot-pen-reset
+plotxy 2 count turtles with [sort inventory = ["A" "B"]]</update>
+      </pen>
+      <pen interval="1.0" mode="1" display="AC" color="-10263788" legend="true">
+        <setup></setup>
+        <update>plot-pen-reset
+plotxy 3 count turtles with [sort inventory = ["A" "C"]]</update>
+      </pen>
+      <pen interval="1.0" mode="1" display="BC" color="-14730904" legend="true">
+        <setup></setup>
+        <update>plot-pen-reset
+plotxy 4 count turtles with [sort inventory = ["B" "C"]]</update>
+      </pen>
+      <pen interval="1.0" mode="1" display="ABC" color="-2674135" legend="true">
+        <setup></setup>
+        <update>plot-pen-reset
+plotxy 5 count turtles with [sort inventory = ["A" "B" "C"]]</update>
+      </pen>
+      <pen interval="1.0" mode="1" display="C" color="-10899396" legend="true">
+        <setup></setup>
+        <update>plot-pen-reset
+plotxy 6 count turtles with [sort inventory = ["C"]]</update>
+      </pen>
+    </plot>
+    <plot x="965" autoPlotX="true" yMax="300.0" autoPlotY="true" yAxis="agents" y="5" xMin="0.0" height="465" legend="true" xMax="100.0" yMin="0.0" width="525" xAxis="sweeps" display="Inventories">
+      <setup></setup>
+      <update></update>
+      <pen interval="1.0" mode="0" display="A" color="-7171555" legend="true">
+        <setup></setup>
+        <update>plot count turtles with [member? "A" inventory]</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="B" color="-14454117" legend="true">
+        <setup></setup>
+        <update>plot count turtles with [member? "B" inventory]</update>
+      </pen>
+      <pen interval="1.0" mode="0" display="C" color="-14439633" legend="true">
+        <setup></setup>
+        <update>plot count turtles with [member? "C" inventory]</update>
+      </pen>
+    </plot>
+    <button x="10" y="315" height="45" disableUntilTicks="false" forever="false" kind="Observer" width="250">setup</button>
+  </widgets>
+  <info><![CDATA[## WHAT IS IT?
+
+This model demonstrates the spread of a virus through a network.  Although the model is somewhat abstract, one interpretation is that each node represents a computer, and we are modeling the progress of a computer virus (or worm) through this network.  Each node may be in one of three states:  susceptible, infected, or resistant.  In the academic literature such a model is sometimes referred to as an SIR model for epidemics.
+
+## HOW IT WORKS
+
+Each time step (tick), each infected node (colored red) attempts to infect all of its neighbors.  Susceptible neighbors (colored blue) will be infected with a probability given by the VIRUS-SPREAD-CHANCE slider.  This might correspond to the probability that someone on the susceptible system actually executes the infected email attachment.
+Resistant nodes (colored gray) cannot be infected.  This might correspond to up-to-date antivirus software and security patches that make a computer immune to this particular virus.
+
+Infected nodes are not immediately aware that they are infected.  Only every so often (determined by the VIRUS-CHECK-FREQUENCY slider) do the nodes check whether they are infected by a virus.  This might correspond to a regularly scheduled virus-scan procedure, or simply a human noticing something fishy about how the computer is behaving.  When the virus has been detected, there is a probability that the virus will be removed (determined by the RECOVERY-CHANCE slider).
+
+If a node does recover, there is some probability that it will become resistant to this virus in the future (given by the GAIN-RESISTANCE-CHANCE slider).
+
+When a node becomes resistant, the links between it and its neighbors are darkened, since they are no longer possible vectors for spreading the virus.
+
+## HOW TO USE IT
+
+Using the sliders, choose the NUMBER-OF-NODES and the AVERAGE-NODE-DEGREE (average number of links coming out of each node).
+
+The network that is created is based on proximity (Euclidean distance) between nodes.  A node is randomly chosen and connected to the nearest node that it is not already connected to.  This process is repeated until the network has the correct number of links to give the specified average node degree.
+
+The INITIAL-OUTBREAK-SIZE slider determines how many of the nodes will start the simulation infected with the virus.
+
+Then press SETUP to create the network.  Press GO to run the model.  The model will stop running once the virus has completely died out.
+
+The VIRUS-SPREAD-CHANCE, VIRUS-CHECK-FREQUENCY, RECOVERY-CHANCE, and GAIN-RESISTANCE-CHANCE sliders (discussed in "How it Works" above) can be adjusted before pressing GO, or while the model is running.
+
+The NETWORK STATUS plot shows the number of nodes in each state (S, I, R) over time.
+
+## THINGS TO NOTICE
+
+At the end of the run, after the virus has died out, some nodes are still susceptible, while others have become immune.  What is the ratio of the number of immune nodes to the number of susceptible nodes?  How is this affected by changing the AVERAGE-NODE-DEGREE of the network?
+
+## THINGS TO TRY
+
+Set GAIN-RESISTANCE-CHANCE to 0%.  Under what conditions will the virus still die out?   How long does it take?  What conditions are required for the virus to live?  If the RECOVERY-CHANCE is bigger than 0, even if the VIRUS-SPREAD-CHANCE is high, do you think that if you could run the model forever, the virus could stay alive?
+
+## EXTENDING THE MODEL
+
+The real computer networks on which viruses spread are generally not based on spatial proximity, like the networks found in this model.  Real computer networks are more often found to exhibit a "scale-free" link-degree distribution, somewhat similar to networks created using the Preferential Attachment model.  Try experimenting with various alternative network structures, and see how the behavior of the virus differs.
+
+Suppose the virus is spreading by emailing itself out to everyone in the computer's address book.  Since being in someone's address book is not a symmetric relationship, change this model to use directed links instead of undirected links.
+
+Can you model multiple viruses at the same time?  How would they interact?  Sometimes if a computer has a piece of malware installed, it is more vulnerable to being infected by more malware.
+
+Try making a model similar to this one, but where the virus has the ability to mutate itself.  Such self-modifying viruses are a considerable threat to computer security, since traditional methods of virus signature identification may not work against them.  In your model, nodes that become immune may be reinfected if the virus has mutated to become significantly different than the variant that originally infected the node.
+
+## RELATED MODELS
+
+Virus, Disease, Preferential Attachment, Diffusion on a Directed Network
+
+## NETLOGO FEATURES
+
+Links are used for modeling the network.  The `layout-spring` primitive is used to position the nodes and links such that the structure of the network is visually clear.
+
+Though it is not used in this model, there exists a network extension for NetLogo that you can download at: https://github.com/NetLogo/NW-Extension.
+
+## HOW TO CITE
+
+If you mention this model or the NetLogo software in a publication, we ask that you include the citations below.
+
+For the model itself:
+
+* Stonedahl, F. and Wilensky, U. (2008).  NetLogo Virus on a Network model.  http://ccl.northwestern.edu/netlogo/models/VirusonaNetwork.  Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
+
+Please cite the NetLogo software as:
+
+* Wilensky, U. (1999). NetLogo. http://ccl.northwestern.edu/netlogo/. Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
+
+## COPYRIGHT AND LICENSE
+
+Copyright 2008 Uri Wilensky.
+
+![CC BY-NC-SA 3.0](http://ccl.northwestern.edu/images/creativecommons/byncsa.png)
+
+This model is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 3.0 License.  To view a copy of this license, visit https://creativecommons.org/licenses/by-nc-sa/3.0/ or send a letter to Creative Commons, 559 Nathan Abbott Way, Stanford, California 94305, USA.
+
+NetLogo itself is free software for non-commercial use under the terms of the GNU General Public License ([see full license information here](https://ccl.northwestern.edu/netlogo/docs/copyright.html)).
+
+To inquire about commercial licenses for either NetLogo or specific models from the models library, please contact netlogo-commercial-admin@ccl.northwestern.edu.
+
+<!-- 2008 Cite: Stonedahl, F. -->]]></info>
+  <turtleShapes>
+    <shape name="default" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="5"></point>
+        <point x="40" y="250"></point>
+        <point x="150" y="205"></point>
+        <point x="260" y="250"></point>
+      </polygon>
+    </shape>
+    <shape name="airplane" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="135" y="15"></point>
+        <point x="120" y="60"></point>
+        <point x="120" y="105"></point>
+        <point x="15" y="165"></point>
+        <point x="15" y="195"></point>
+        <point x="120" y="180"></point>
+        <point x="135" y="240"></point>
+        <point x="105" y="270"></point>
+        <point x="120" y="285"></point>
+        <point x="150" y="270"></point>
+        <point x="180" y="285"></point>
+        <point x="210" y="270"></point>
+        <point x="165" y="240"></point>
+        <point x="180" y="180"></point>
+        <point x="285" y="195"></point>
+        <point x="285" y="165"></point>
+        <point x="180" y="105"></point>
+        <point x="180" y="60"></point>
+        <point x="165" y="15"></point>
+      </polygon>
+    </shape>
+    <shape name="arrow" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="0"></point>
+        <point x="0" y="150"></point>
+        <point x="105" y="150"></point>
+        <point x="105" y="293"></point>
+        <point x="195" y="293"></point>
+        <point x="195" y="150"></point>
+        <point x="300" y="150"></point>
+      </polygon>
+    </shape>
+    <shape name="box" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="285"></point>
+        <point x="285" y="225"></point>
+        <point x="285" y="75"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="135"></point>
+        <point x="15" y="75"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="75"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="75"></point>
+        <point x="15" y="225"></point>
+        <point x="150" y="285"></point>
+        <point x="150" y="135"></point>
+      </polygon>
+      <line endX="150" startY="285" marked="false" color="255" endY="135" startX="150"></line>
+      <line endX="15" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+      <line endX="285" startY="135" marked="false" color="255" endY="75" startX="150"></line>
+    </shape>
+    <shape name="bug" rotatable="true" editableColorIndex="0">
+      <circle x="96" y="182" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="110" y="127" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <circle x="110" y="75" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <line endX="80" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+      <line endX="220" startY="100" marked="true" color="-1920102913" endY="30" startX="150"></line>
+    </shape>
+    <shape name="butterfly" rotatable="true" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="209" y="199"></point>
+        <point x="225" y="225"></point>
+        <point x="225" y="255"></point>
+        <point x="195" y="270"></point>
+        <point x="165" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="165"></point>
+        <point x="89" y="198"></point>
+        <point x="75" y="225"></point>
+        <point x="75" y="255"></point>
+        <point x="105" y="270"></point>
+        <point x="135" y="255"></point>
+        <point x="150" y="240"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="139" y="148"></point>
+        <point x="100" y="105"></point>
+        <point x="55" y="90"></point>
+        <point x="25" y="90"></point>
+        <point x="10" y="105"></point>
+        <point x="10" y="135"></point>
+        <point x="25" y="180"></point>
+        <point x="40" y="195"></point>
+        <point x="85" y="194"></point>
+        <point x="139" y="163"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="162" y="150"></point>
+        <point x="200" y="105"></point>
+        <point x="245" y="90"></point>
+        <point x="275" y="90"></point>
+        <point x="290" y="105"></point>
+        <point x="290" y="135"></point>
+        <point x="275" y="180"></point>
+        <point x="260" y="195"></point>
+        <point x="215" y="195"></point>
+        <point x="162" y="165"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="135" y="225"></point>
+        <point x="120" y="150"></point>
+        <point x="135" y="120"></point>
+        <point x="150" y="105"></point>
+        <point x="165" y="120"></point>
+        <point x="180" y="150"></point>
+        <point x="165" y="225"></point>
+      </polygon>
+      <circle x="135" y="90" marked="false" color="255" diameter="30" filled="true"></circle>
+      <line endX="195" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+      <line endX="105" startY="105" marked="false" color="255" endY="60" startX="150"></line>
+    </shape>
+    <shape name="car" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="300" y="180"></point>
+        <point x="279" y="164"></point>
+        <point x="261" y="144"></point>
+        <point x="240" y="135"></point>
+        <point x="226" y="132"></point>
+        <point x="213" y="106"></point>
+        <point x="203" y="84"></point>
+        <point x="185" y="63"></point>
+        <point x="159" y="50"></point>
+        <point x="135" y="50"></point>
+        <point x="75" y="60"></point>
+        <point x="0" y="150"></point>
+        <point x="0" y="165"></point>
+        <point x="0" y="225"></point>
+        <point x="300" y="225"></point>
+        <point x="300" y="180"></point>
+      </polygon>
+      <circle x="180" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <circle x="30" y="180" marked="false" color="255" diameter="90" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="162" y="80"></point>
+        <point x="132" y="78"></point>
+        <point x="134" y="135"></point>
+        <point x="209" y="135"></point>
+        <point x="194" y="105"></point>
+        <point x="189" y="96"></point>
+        <point x="180" y="89"></point>
+      </polygon>
+      <circle x="47" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+      <circle x="195" y="195" marked="true" color="-1920102913" diameter="58" filled="true"></circle>
+    </shape>
+    <shape name="circle" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="circle 2" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+    </shape>
+    <shape name="cow" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="200" y="193"></point>
+        <point x="197" y="249"></point>
+        <point x="179" y="249"></point>
+        <point x="177" y="196"></point>
+        <point x="166" y="187"></point>
+        <point x="140" y="189"></point>
+        <point x="93" y="191"></point>
+        <point x="78" y="179"></point>
+        <point x="72" y="211"></point>
+        <point x="49" y="209"></point>
+        <point x="48" y="181"></point>
+        <point x="37" y="149"></point>
+        <point x="25" y="120"></point>
+        <point x="25" y="89"></point>
+        <point x="45" y="72"></point>
+        <point x="103" y="84"></point>
+        <point x="179" y="75"></point>
+        <point x="198" y="76"></point>
+        <point x="252" y="64"></point>
+        <point x="272" y="81"></point>
+        <point x="293" y="103"></point>
+        <point x="285" y="121"></point>
+        <point x="255" y="121"></point>
+        <point x="242" y="118"></point>
+        <point x="224" y="167"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="73" y="210"></point>
+        <point x="86" y="251"></point>
+        <point x="62" y="249"></point>
+        <point x="48" y="208"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="25" y="114"></point>
+        <point x="16" y="195"></point>
+        <point x="9" y="204"></point>
+        <point x="23" y="213"></point>
+        <point x="25" y="200"></point>
+        <point x="39" y="123"></point>
+      </polygon>
+    </shape>
+    <shape name="cylinder" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+    </shape>
+    <shape name="dot" rotatable="false" editableColorIndex="0">
+      <circle x="90" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+    </shape>
+    <shape name="face happy" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="255"></point>
+        <point x="90" y="239"></point>
+        <point x="62" y="213"></point>
+        <point x="47" y="191"></point>
+        <point x="67" y="179"></point>
+        <point x="90" y="203"></point>
+        <point x="109" y="218"></point>
+        <point x="150" y="225"></point>
+        <point x="192" y="218"></point>
+        <point x="210" y="203"></point>
+        <point x="227" y="181"></point>
+        <point x="251" y="194"></point>
+        <point x="236" y="217"></point>
+        <point x="212" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="face neutral" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="7" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <rectangle endX="240" startY="195" marked="false" color="255" endY="225" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="face sad" rotatable="false" editableColorIndex="0">
+      <circle x="8" y="8" marked="true" color="-1920102913" diameter="285" filled="true"></circle>
+      <circle x="60" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <circle x="180" y="75" marked="false" color="255" diameter="60" filled="true"></circle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="150" y="168"></point>
+        <point x="90" y="184"></point>
+        <point x="62" y="210"></point>
+        <point x="47" y="232"></point>
+        <point x="67" y="244"></point>
+        <point x="90" y="220"></point>
+        <point x="109" y="205"></point>
+        <point x="150" y="198"></point>
+        <point x="192" y="205"></point>
+        <point x="210" y="220"></point>
+        <point x="227" y="242"></point>
+        <point x="251" y="229"></point>
+        <point x="236" y="206"></point>
+        <point x="212" y="183"></point>
+      </polygon>
+    </shape>
+    <shape name="fish" rotatable="false" editableColorIndex="0">
+      <polygon color="-1" filled="true" marked="false">
+        <point x="44" y="131"></point>
+        <point x="21" y="87"></point>
+        <point x="15" y="86"></point>
+        <point x="0" y="120"></point>
+        <point x="15" y="150"></point>
+        <point x="0" y="180"></point>
+        <point x="13" y="214"></point>
+        <point x="20" y="212"></point>
+        <point x="45" y="166"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="135" y="195"></point>
+        <point x="119" y="235"></point>
+        <point x="95" y="218"></point>
+        <point x="76" y="210"></point>
+        <point x="46" y="204"></point>
+        <point x="60" y="165"></point>
+      </polygon>
+      <polygon color="-1" filled="true" marked="false">
+        <point x="75" y="45"></point>
+        <point x="83" y="77"></point>
+        <point x="71" y="103"></point>
+        <point x="86" y="114"></point>
+        <point x="166" y="78"></point>
+        <point x="135" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="136"></point>
+        <point x="151" y="77"></point>
+        <point x="226" y="81"></point>
+        <point x="280" y="119"></point>
+        <point x="292" y="146"></point>
+        <point x="292" y="160"></point>
+        <point x="287" y="170"></point>
+        <point x="270" y="195"></point>
+        <point x="195" y="210"></point>
+        <point x="151" y="212"></point>
+        <point x="30" y="166"></point>
+      </polygon>
+      <circle x="215" y="106" marked="false" color="255" diameter="30" filled="true"></circle>
+    </shape>
+    <shape name="flag" rotatable="false" editableColorIndex="0">
+      <rectangle endX="75" startY="15" marked="true" color="-1920102913" endY="300" startX="60" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="90" y="150"></point>
+        <point x="270" y="90"></point>
+        <point x="90" y="30"></point>
+      </polygon>
+      <line endX="90" startY="135" marked="true" color="-1920102913" endY="135" startX="75"></line>
+      <line endX="90" startY="45" marked="true" color="-1920102913" endY="45" startX="75"></line>
+    </shape>
+    <shape name="flower" rotatable="false" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="135" y="120"></point>
+        <point x="165" y="165"></point>
+        <point x="180" y="210"></point>
+        <point x="180" y="240"></point>
+        <point x="150" y="300"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="240"></point>
+        <point x="195" y="195"></point>
+        <point x="165" y="135"></point>
+      </polygon>
+      <circle x="85" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="147" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="192" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="85" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="40" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="177" y="132" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="70" y="85" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="130" y="25" marked="true" color="-1920102913" diameter="38" filled="true"></circle>
+      <circle x="96" y="51" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="113" y="68" marked="false" color="255" diameter="74" filled="true"></circle>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="189" y="233"></point>
+        <point x="219" y="188"></point>
+        <point x="249" y="173"></point>
+        <point x="279" y="188"></point>
+        <point x="234" y="218"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="180" y="255"></point>
+        <point x="150" y="210"></point>
+        <point x="105" y="210"></point>
+        <point x="75" y="240"></point>
+        <point x="135" y="240"></point>
+      </polygon>
+    </shape>
+    <shape name="house" rotatable="false" editableColorIndex="0">
+      <rectangle endX="255" startY="120" marked="true" color="-1920102913" endY="285" startX="45" filled="true"></rectangle>
+      <rectangle endX="180" startY="210" marked="false" color="255" endY="285" startX="120" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="15" y="120"></point>
+        <point x="150" y="15"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+      <line endX="270" startY="120" marked="false" color="255" endY="120" startX="30"></line>
+    </shape>
+    <shape name="leaf" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="210"></point>
+        <point x="135" y="195"></point>
+        <point x="120" y="210"></point>
+        <point x="60" y="210"></point>
+        <point x="30" y="195"></point>
+        <point x="60" y="180"></point>
+        <point x="60" y="165"></point>
+        <point x="15" y="135"></point>
+        <point x="30" y="120"></point>
+        <point x="15" y="105"></point>
+        <point x="40" y="104"></point>
+        <point x="45" y="90"></point>
+        <point x="60" y="90"></point>
+        <point x="90" y="105"></point>
+        <point x="105" y="120"></point>
+        <point x="120" y="120"></point>
+        <point x="105" y="60"></point>
+        <point x="120" y="60"></point>
+        <point x="135" y="30"></point>
+        <point x="150" y="15"></point>
+        <point x="165" y="30"></point>
+        <point x="180" y="60"></point>
+        <point x="195" y="60"></point>
+        <point x="180" y="120"></point>
+        <point x="195" y="120"></point>
+        <point x="210" y="105"></point>
+        <point x="240" y="90"></point>
+        <point x="255" y="90"></point>
+        <point x="263" y="104"></point>
+        <point x="285" y="105"></point>
+        <point x="270" y="120"></point>
+        <point x="285" y="135"></point>
+        <point x="240" y="165"></point>
+        <point x="240" y="180"></point>
+        <point x="270" y="195"></point>
+        <point x="240" y="210"></point>
+        <point x="180" y="210"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="195"></point>
+        <point x="135" y="240"></point>
+        <point x="120" y="255"></point>
+        <point x="105" y="255"></point>
+        <point x="105" y="285"></point>
+        <point x="135" y="285"></point>
+        <point x="165" y="240"></point>
+        <point x="165" y="195"></point>
+      </polygon>
+    </shape>
+    <shape name="line" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="300" startX="150"></line>
+    </shape>
+    <shape name="line half" rotatable="true" editableColorIndex="0">
+      <line endX="150" startY="0" marked="true" color="-1920102913" endY="150" startX="150"></line>
+    </shape>
+    <shape name="pentagon" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="15"></point>
+        <point x="15" y="120"></point>
+        <point x="60" y="285"></point>
+        <point x="240" y="285"></point>
+        <point x="285" y="120"></point>
+      </polygon>
+    </shape>
+    <shape name="person" rotatable="false" editableColorIndex="0">
+      <circle x="110" y="5" marked="true" color="-1920102913" diameter="80" filled="true"></circle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="120" y="195"></point>
+        <point x="90" y="285"></point>
+        <point x="105" y="300"></point>
+        <point x="135" y="300"></point>
+        <point x="150" y="225"></point>
+        <point x="165" y="300"></point>
+        <point x="195" y="300"></point>
+        <point x="210" y="285"></point>
+        <point x="180" y="195"></point>
+        <point x="195" y="90"></point>
+      </polygon>
+      <rectangle endX="172" startY="79" marked="true" color="-1920102913" endY="94" startX="127" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="195" y="90"></point>
+        <point x="240" y="150"></point>
+        <point x="225" y="180"></point>
+        <point x="165" y="105"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="105" y="90"></point>
+        <point x="60" y="150"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="105"></point>
+      </polygon>
+    </shape>
+    <shape name="plant" rotatable="false" editableColorIndex="0">
+      <rectangle endX="165" startY="90" marked="true" color="-1920102913" endY="300" startX="135" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="255"></point>
+        <point x="90" y="210"></point>
+        <point x="45" y="195"></point>
+        <point x="75" y="255"></point>
+        <point x="135" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="255"></point>
+        <point x="210" y="210"></point>
+        <point x="255" y="195"></point>
+        <point x="225" y="255"></point>
+        <point x="165" y="285"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="180"></point>
+        <point x="90" y="135"></point>
+        <point x="45" y="120"></point>
+        <point x="75" y="180"></point>
+        <point x="135" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="180"></point>
+        <point x="165" y="210"></point>
+        <point x="225" y="180"></point>
+        <point x="255" y="120"></point>
+        <point x="210" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="105"></point>
+        <point x="90" y="60"></point>
+        <point x="45" y="45"></point>
+        <point x="75" y="105"></point>
+        <point x="135" y="135"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="165" y="105"></point>
+        <point x="165" y="135"></point>
+        <point x="225" y="105"></point>
+        <point x="255" y="45"></point>
+        <point x="210" y="60"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="135" y="90"></point>
+        <point x="120" y="45"></point>
+        <point x="150" y="15"></point>
+        <point x="180" y="45"></point>
+        <point x="165" y="90"></point>
+      </polygon>
+    </shape>
+    <shape name="square" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+    </shape>
+    <shape name="square 2" rotatable="false" editableColorIndex="0">
+      <rectangle endX="270" startY="30" marked="true" color="-1920102913" endY="270" startX="30" filled="true"></rectangle>
+      <rectangle endX="240" startY="60" marked="false" color="255" endY="240" startX="60" filled="true"></rectangle>
+    </shape>
+    <shape name="star" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="151" y="1"></point>
+        <point x="185" y="108"></point>
+        <point x="298" y="108"></point>
+        <point x="207" y="175"></point>
+        <point x="242" y="282"></point>
+        <point x="151" y="216"></point>
+        <point x="59" y="282"></point>
+        <point x="94" y="175"></point>
+        <point x="3" y="108"></point>
+        <point x="116" y="108"></point>
+      </polygon>
+    </shape>
+    <shape name="target" rotatable="false" editableColorIndex="0">
+      <circle x="0" y="0" marked="true" color="-1920102913" diameter="300" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <circle x="60" y="60" marked="true" color="-1920102913" diameter="180" filled="true"></circle>
+      <circle x="90" y="90" marked="false" color="255" diameter="120" filled="true"></circle>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+    </shape>
+    <shape name="tree" rotatable="false" editableColorIndex="0">
+      <circle x="118" y="3" marked="true" color="-1920102913" diameter="94" filled="true"></circle>
+      <rectangle endX="180" startY="195" marked="false" color="-1653716737" endY="300" startX="120" filled="true"></rectangle>
+      <circle x="65" y="21" marked="true" color="-1920102913" diameter="108" filled="true"></circle>
+      <circle x="116" y="41" marked="true" color="-1920102913" diameter="127" filled="true"></circle>
+      <circle x="45" y="90" marked="true" color="-1920102913" diameter="120" filled="true"></circle>
+      <circle x="104" y="74" marked="true" color="-1920102913" diameter="152" filled="true"></circle>
+    </shape>
+    <shape name="triangle" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+    </shape>
+    <shape name="triangle 2" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="150" y="30"></point>
+        <point x="15" y="255"></point>
+        <point x="285" y="255"></point>
+      </polygon>
+      <polygon color="255" filled="true" marked="false">
+        <point x="151" y="99"></point>
+        <point x="225" y="223"></point>
+        <point x="75" y="224"></point>
+      </polygon>
+    </shape>
+    <shape name="truck" rotatable="false" editableColorIndex="0">
+      <rectangle endX="195" startY="45" marked="true" color="-1920102913" endY="187" startX="4" filled="true"></rectangle>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="296" y="193"></point>
+        <point x="296" y="150"></point>
+        <point x="259" y="134"></point>
+        <point x="244" y="104"></point>
+        <point x="208" y="104"></point>
+        <point x="207" y="194"></point>
+      </polygon>
+      <rectangle endX="195" startY="60" marked="false" color="-1" endY="105" startX="195" filled="true"></rectangle>
+      <polygon color="255" filled="true" marked="false">
+        <point x="238" y="112"></point>
+        <point x="252" y="141"></point>
+        <point x="219" y="141"></point>
+        <point x="218" y="112"></point>
+      </polygon>
+      <circle x="234" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <rectangle endX="214" startY="185" marked="true" color="-1920102913" endY="194" startX="181" filled="true"></rectangle>
+      <circle x="144" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="false" color="255" diameter="42" filled="true"></circle>
+      <circle x="24" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="144" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+      <circle x="234" y="174" marked="true" color="-1920102913" diameter="42" filled="false"></circle>
+    </shape>
+    <shape name="turtle" rotatable="true" editableColorIndex="0">
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="215" y="204"></point>
+        <point x="240" y="233"></point>
+        <point x="246" y="254"></point>
+        <point x="228" y="266"></point>
+        <point x="215" y="252"></point>
+        <point x="193" y="210"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="195" y="90"></point>
+        <point x="225" y="75"></point>
+        <point x="245" y="75"></point>
+        <point x="260" y="89"></point>
+        <point x="269" y="108"></point>
+        <point x="261" y="124"></point>
+        <point x="240" y="105"></point>
+        <point x="225" y="105"></point>
+        <point x="210" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="105" y="90"></point>
+        <point x="75" y="75"></point>
+        <point x="55" y="75"></point>
+        <point x="40" y="89"></point>
+        <point x="31" y="108"></point>
+        <point x="39" y="124"></point>
+        <point x="60" y="105"></point>
+        <point x="75" y="105"></point>
+        <point x="90" y="105"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="132" y="85"></point>
+        <point x="134" y="64"></point>
+        <point x="107" y="51"></point>
+        <point x="108" y="17"></point>
+        <point x="150" y="2"></point>
+        <point x="192" y="18"></point>
+        <point x="192" y="52"></point>
+        <point x="169" y="65"></point>
+        <point x="172" y="87"></point>
+      </polygon>
+      <polygon color="1504722175" filled="true" marked="false">
+        <point x="85" y="204"></point>
+        <point x="60" y="233"></point>
+        <point x="54" y="254"></point>
+        <point x="72" y="266"></point>
+        <point x="85" y="252"></point>
+        <point x="107" y="210"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="119" y="75"></point>
+        <point x="179" y="75"></point>
+        <point x="209" y="101"></point>
+        <point x="224" y="135"></point>
+        <point x="220" y="225"></point>
+        <point x="175" y="261"></point>
+        <point x="128" y="261"></point>
+        <point x="81" y="224"></point>
+        <point x="74" y="135"></point>
+        <point x="88" y="99"></point>
+      </polygon>
+    </shape>
+    <shape name="wheel" rotatable="false" editableColorIndex="0">
+      <circle x="3" y="3" marked="true" color="-1920102913" diameter="294" filled="true"></circle>
+      <circle x="30" y="30" marked="false" color="255" diameter="240" filled="true"></circle>
+      <line endX="150" startY="285" marked="true" color="-1920102913" endY="15" startX="150"></line>
+      <line endX="285" startY="150" marked="true" color="-1920102913" endY="150" startX="15"></line>
+      <circle x="120" y="120" marked="true" color="-1920102913" diameter="60" filled="true"></circle>
+      <line endX="79" startY="40" marked="true" color="-1920102913" endY="269" startX="216"></line>
+      <line endX="269" startY="84" marked="true" color="-1920102913" endY="221" startX="40"></line>
+      <line endX="269" startY="216" marked="true" color="-1920102913" endY="79" startX="40"></line>
+      <line endX="221" startY="40" marked="true" color="-1920102913" endY="269" startX="84"></line>
+    </shape>
+    <shape name="x" rotatable="false" editableColorIndex="0">
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="270" y="75"></point>
+        <point x="225" y="30"></point>
+        <point x="30" y="225"></point>
+        <point x="75" y="270"></point>
+      </polygon>
+      <polygon color="-1920102913" filled="true" marked="true">
+        <point x="30" y="75"></point>
+        <point x="75" y="30"></point>
+        <point x="270" y="225"></point>
+        <point x="225" y="270"></point>
+      </polygon>
+    </shape>
+  </turtleShapes>
+  <linkShapes>
+    <shape name="default" curviness="0.0">
+      <lines>
+        <line x="-0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+        <line x="0.0" visible="true">
+          <dash value="1.0"></dash>
+          <dash value="0.0"></dash>
+        </line>
+        <line x="0.2" visible="false">
+          <dash value="0.0"></dash>
+          <dash value="1.0"></dash>
+        </line>
+      </lines>
+      <indicator>
+        <shape name="link direction" rotatable="true" editableColorIndex="0">
+          <line endX="90" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+          <line endX="210" startY="150" marked="true" color="-1920102913" endY="180" startX="150"></line>
+        </shape>
+      </indicator>
+    </shape>
+  </linkShapes>
+  <previewCommands>setup repeat 75 [ go ]</previewCommands>
+  <experiments>
+    <experiment name="experiment" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>outcome</metric>
+        <metric>c-created?</metric>
+        <metric>first-c-time</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="bridges">
+          <value value="0"></value>
+          <value value="2"></value>
+          <value value="10"></value>
+          <value value="50"></value>
+          <value value="70"></value>
+          <value value="100"></value>
+          <value value="150"></value>
+          <value value="200"></value>
+          <value value="750"></value>
+        </enumeratedValueSet>
+        <steppedValueSet variable="graph-seed" first="1" step="1" last="20"></steppedValueSet>
+        <steppedValueSet variable="run-seed" first="1" step="1" last="50"></steppedValueSet>
+        <enumeratedValueSet variable="horizon">
+          <value value="10000"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="gamma">
+          <value value="0.5"></value>
+          <value value="1"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="beta">
+          <value value="1"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="baseline" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>outcome</metric>
+        <metric>c-created?</metric>
+        <metric>first-c-time</metric>
+        <metric>count turtles</metric>
+        <metric>count turtles with [sort inventory = ["A"]]</metric>
+        <metric>count turtles with [sort inventory = ["B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["C"]]</metric>
+        <metric>count turtles with [member? "C" inventory]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="bridges">
+          <value value="0"></value>
+          <value value="2"></value>
+          <value value="10"></value>
+          <value value="50"></value>
+          <value value="70"></value>
+          <value value="100"></value>
+          <value value="150"></value>
+          <value value="200"></value>
+          <value value="750"></value>
+        </enumeratedValueSet>
+        <steppedValueSet variable="graph-seed" first="1" step="1" last="20"></steppedValueSet>
+        <steppedValueSet variable="run-seed" first="1" step="1" last="20"></steppedValueSet>
+        <enumeratedValueSet variable="horizon">
+          <value value="40000"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="beta">
+          <value value="1"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="gamma">
+          <value value="0.5"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="low-gamma" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>outcome</metric>
+        <metric>c-created?</metric>
+        <metric>first-c-time</metric>
+        <metric>count turtles</metric>
+        <metric>count turtles with [sort inventory = ["A"]]</metric>
+        <metric>count turtles with [sort inventory = ["B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["C"]]</metric>
+        <metric>count turtles with [member? "C" inventory]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="bridges">
+          <value value="0"></value>
+          <value value="2"></value>
+          <value value="10"></value>
+          <value value="50"></value>
+          <value value="70"></value>
+          <value value="100"></value>
+          <value value="150"></value>
+          <value value="200"></value>
+          <value value="750"></value>
+        </enumeratedValueSet>
+        <steppedValueSet variable="graph-seed" first="1" step="1" last="20"></steppedValueSet>
+        <steppedValueSet variable="run-seed" first="1" step="1" last="20"></steppedValueSet>
+        <enumeratedValueSet variable="horizon">
+          <value value="40000"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="beta">
+          <value value="1"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="gamma">
+          <value value="0.1"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="high-gamma" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>outcome</metric>
+        <metric>c-created?</metric>
+        <metric>first-c-time</metric>
+        <metric>count turtles</metric>
+        <metric>count turtles with [sort inventory = ["A"]]</metric>
+        <metric>count turtles with [sort inventory = ["B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["C"]]</metric>
+        <metric>count turtles with [member? "C" inventory]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="bridges">
+          <value value="0"></value>
+          <value value="2"></value>
+          <value value="10"></value>
+          <value value="50"></value>
+          <value value="70"></value>
+          <value value="100"></value>
+          <value value="150"></value>
+          <value value="200"></value>
+          <value value="750"></value>
+        </enumeratedValueSet>
+        <steppedValueSet variable="graph-seed" first="1" step="1" last="20"></steppedValueSet>
+        <steppedValueSet variable="run-seed" first="1" step="1" last="20"></steppedValueSet>
+        <enumeratedValueSet variable="horizon">
+          <value value="40000"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="beta">
+          <value value="1"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="gamma">
+          <value value="0.9"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="low-beta" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>outcome</metric>
+        <metric>c-created?</metric>
+        <metric>first-c-time</metric>
+        <metric>count turtles</metric>
+        <metric>count turtles with [sort inventory = ["A"]]</metric>
+        <metric>count turtles with [sort inventory = ["B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["C"]]</metric>
+        <metric>count turtles with [member? "C" inventory]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="bridges">
+          <value value="0"></value>
+          <value value="2"></value>
+          <value value="10"></value>
+          <value value="50"></value>
+          <value value="70"></value>
+          <value value="100"></value>
+          <value value="150"></value>
+          <value value="200"></value>
+          <value value="750"></value>
+        </enumeratedValueSet>
+        <steppedValueSet variable="graph-seed" first="1" step="1" last="20"></steppedValueSet>
+        <steppedValueSet variable="run-seed" first="1" step="1" last="20"></steppedValueSet>
+        <enumeratedValueSet variable="horizon">
+          <value value="40000"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="beta">
+          <value value="0.6"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="gamma">
+          <value value="0.5"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+    <experiment name="lower-beta" repetitions="1" sequentialRunOrder="true" runMetricsEveryStep="false">
+      <setup>setup</setup>
+      <go>go</go>
+      <metrics>
+        <metric>ticks</metric>
+        <metric>outcome</metric>
+        <metric>c-created?</metric>
+        <metric>first-c-time</metric>
+        <metric>count turtles</metric>
+        <metric>count turtles with [sort inventory = ["A"]]</metric>
+        <metric>count turtles with [sort inventory = ["B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["A" "B" "C"]]</metric>
+        <metric>count turtles with [sort inventory = ["C"]]</metric>
+        <metric>count turtles with [member? "C" inventory]</metric>
+      </metrics>
+      <constants>
+        <enumeratedValueSet variable="bridges">
+          <value value="0"></value>
+          <value value="2"></value>
+          <value value="10"></value>
+          <value value="50"></value>
+          <value value="70"></value>
+          <value value="100"></value>
+          <value value="150"></value>
+          <value value="200"></value>
+          <value value="750"></value>
+        </enumeratedValueSet>
+        <steppedValueSet variable="graph-seed" first="1" step="1" last="20"></steppedValueSet>
+        <steppedValueSet variable="run-seed" first="1" step="1" last="20"></steppedValueSet>
+        <enumeratedValueSet variable="horizon">
+          <value value="40000"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="beta">
+          <value value="0.3"></value>
+        </enumeratedValueSet>
+        <enumeratedValueSet variable="gamma">
+          <value value="0.5"></value>
+        </enumeratedValueSet>
+      </constants>
+    </experiment>
+  </experiments>
+</model>
